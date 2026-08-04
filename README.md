@@ -56,3 +56,10 @@ Rewrites & Fixes by SpikyAtLinux:
 <li><b>Safe make.conf Mode:</b> Multiline bash strings in <code>make.conf</code> (like <code>DESKTOPUSE</code> or <code>HARDWARE_USE</code>) are no longer mangled by destructive <code>sed</code> replacements. The script now performs non-destructive analysis and warns the user about global use flag collisions.</li>
 <li><b>Smart Overlay Awareness:</b> Explicitly targeted overlay packages (e.g., <code>cat/pkg::spikyatlinux</code>) in <code>package.unmask</code> are correctly recognized and no longer falsely flagged as "stupid entries".</li>
 </ul>
+
+---
+
+Credits & Acknowledgements:
+===========================
+
+Based on the original <code>portconf</code> utility created by <b>megabaks</b>.
