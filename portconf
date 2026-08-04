@@ -1,7 +1,11 @@
 #!/bin/bash
 # Copyright spikyatlinux
 # Distributed under the terms of the GNU General Public License v3 or later
-# Rewritten & Fixed for modern Gentoo/Regex compatibility and Comment Preservation
+# Rewritten & Fixed for modern Gentoo/Regex compatibility, Comment & Spacing Preservation
+
+PORTCONF_VERSION="v1.7.0"
+PORTCONF_COMMIT=""
+
 ############################################################################
 ################ portage functions #########################################
 if [[ -f "/lib/gentoo/functions.sh" ]]; then
@@ -32,7 +36,6 @@ IGNORE_ENV_CHECKS="${IGNORE_ENV_CHECKS:-no}"
 IGNORE_PROFILE_DIR="${IGNORE_PROFILE_DIR:-no}"
 ############################################################################
 ################ ignore ####################################################
-# Fix: Safe Regex Builder for IGNORE allowing space-separated arrays
 _RAW_IGNORE=""
 for _cat in ${IGNORE_CATEGORY}; do
     [[ -n "${_cat}" ]] && _RAW_IGNORE+=" ${_cat}/.*"
@@ -384,7 +387,6 @@ sort_uniq_files(){
 
         declare -A SEEN
         while IFS= read -r line || [[ -n "${line}" ]]; do
-            # Kommentare und Leerzeilen an der exakten Stelle erhalten
             if [[ -z "${line}" || "${line}" =~ ^[[:space:]]*# ]]; then
                 echo "${line}" >> "${tmp_sort}"
                 continue
@@ -392,7 +394,6 @@ sort_uniq_files(){
             atom="$(echo "${line}" | awk '{print $1}')"
             if [[ -z "${SEEN["$atom"]}" ]]; then
                 SEEN["$atom"]=1
-                # Hole alle USE-Flags/Keywords für dieses Atom aus der gesamten Datei
                 opts="$(grep -F "${atom} " "${package}" | cut -d" " -f2- | tr '\n' ' ')"
                 echo "${atom} ${opts}" | sed -e 's|[ \t]*$||' -e 's|[ \t]\+| |g' >> "${tmp_sort}"
             fi
@@ -415,7 +416,6 @@ file_or_dir(){
         return 1
     fi
     for target in ${founded};do
-        # Schützt package.env
         if [[ "${target}" == *"/package.env"* ]]; then
             continue
         fi
@@ -447,7 +447,7 @@ rm_comments(){
     no_newline(){
         tmp_file="$(mktemp)"
         cp "${file}" "${tmp_file}"
-        sed -e "s|^#.*||g" -e '/^$/d' -i ${tmp_file}
+        sed -e "s|^#.*||g" -i ${tmp_file}
         diff_ask "${file}" "${tmp_file}"
         eend $? 2>/dev/null
     }
@@ -459,7 +459,7 @@ rm_all_comments(){
     no_newline_inline(){
         tmp_file="$(mktemp)"
         cp "${file}" "${tmp_file}"
-        sed -e "s|#.*||g" -e 's/[ \t]*$//' -e '/^$/d' -i ${tmp_file}
+        sed -e "s|#.*||g" -e 's/[ \t]*$//' -i ${tmp_file}
         diff_ask "${file}" "${tmp_file}"
         eend $? 2>/dev/null
     }
@@ -541,11 +541,11 @@ stupid_keywords(){
                         string="$(grep "^${safe_satom} ${safe_lkeys}$" "${1}")"
                         fixed_string="${satom} ${out_keys}"
                     fi
+                    sed -e "s|^${string//\*/\\*}$|${fixed_string}|" -i "${2}" || echo fail 525
                 else
                     string="$(grep "^${safe_satom} ${safe_lkeys}.*$" "${1}")"
-                    fixed_string=""
+                    sed -e "\|^${string//\*/\\*}$|d" -i "${2}" || echo fail 525
                 fi
-                sed -e "s|^${string//\*/\\*}$|${fixed_string}|"  -e '/^$/d' -i "${2}" || echo fail 525
             fi
         done < "${1}"
     done
@@ -686,7 +686,7 @@ not_if(){
                     else
                         echo -e "${red}Not installed${restore} ${green}${category}/${pn}${restore}"
                     fi
-                    sed -e "s|.*\<${category//\*/\\*}/${pn//\*/\\*}\>.*||" -e '/^$/d' -i "${tmp_package}" 2>/dev/null
+                    sed -e "\|^${category//\*/\\*}/${pn//\*/\\*}|d" -i "${tmp_package}" 2>/dev/null
                     eend $? 2>/dev/null
                 fi
             done <<< $(qatom "${atom}")
@@ -833,7 +833,7 @@ invalid_uses(){
         while read atom opt;do
             if [[ -n "${atom}" ]] && [[ -z "${opt}" ]];then
                 echo -e "Removing atom: ${green}${atom}${restore}"
-                sed -e "s|^${atom//\*/\\*} *$||" -e '/^$/d' -i "${tmp_file}" 2>/dev/null
+                sed -e "\|^${atom//\*/\\*} *$|d" -i "${tmp_file}" 2>/dev/null
                 eend $? 2>/dev/null
             fi
         done <<< "$([[ -n "${IGNORE_REGEX}" ]] && grep -E -v "(${IGNORE_REGEX})" < "${file}" || cat "${file}")"
@@ -841,7 +841,7 @@ invalid_uses(){
         while read atom opt;do
             if [[ -n "${atom}" ]] && [[ -z "${opt}" ]];then
                 echo -e "Removing atom: ${green}${atom}${restore}"
-                sed -e "s|^${atom//\*/\\*} *$||" -e '/^$/d' -i "${tmp_file}" 2>/dev/null
+                sed -e "\|^${atom//\*/\\*} *$|d" -i "${tmp_file}" 2>/dev/null
                 eend $? 2>/dev/null
             fi
         done <<< "$([[ -n "${IGNORE_REGEX}" ]] && grep -E -v "(${IGNORE_REGEX})" < "${tmp_file}" || cat "${tmp_file}")"
@@ -937,9 +937,12 @@ not_found(){
             echo -e "${underline}Removing incorrect from${restore} ${contrast}${package}${restore}:"
             while read line;do
                 [[ -z "${line}" ]] && continue
+                # PROTECTION: Ignore overlay targetings and wildcards
+                if [[ "${line}" == *"::"* || "${line}" == "*/*"* ]]; then continue; fi
+                
                 echo -e "${red}Incorrect:${restore} ${line}"
                 line="${line//'*'/\*}"
-                sed -e "s|$line||" -e 's/[ \t]*$//' -e '/^$/d' -i ${tmp_package} 2>/dev/null
+                sed -e "\|^${line}|d" -i "${tmp_package}" 2>/dev/null
                 eend $? 2>/dev/null
             done <<< "${incorrect}"
             diff_ask "${package}" "${tmp_package}"
@@ -947,11 +950,14 @@ not_found(){
             echo -e "${underline}Removing incorrect from${restore} ${contrast}${package}${restore}:"
             IFS=$'\n'
             for line in ${incorrect};do
+                # PROTECTION: Ignore overlay targetings and wildcards
+                if [[ "${line}" == *"::"* || "${line}" == "*/*"* ]]; then continue; fi
+                
                 for file in $(grep -RH "${line//'*'/\*}" "${package}"/ | awk -F \: '{print $1}');do
                     tmp_file="$(mktemp)"
                     cp "${file}" "${tmp_file}"
                     echo -e "${red}Incorrect:${restore} ${line}"
-                    [[ -n "${line}" ]] && sed -e "s|${line//'*'/\*}||" -e 's/[ \t]*$//' -e '/^$/d' -i ${tmp_file}
+                    [[ -n "${line}" ]] && sed -e "\|^${line//'*'/\*}|d" -i "${tmp_file}"
                     diff_ask "${file}" "${tmp_file}"
                     eend $? 2>/dev/null
                 done
@@ -971,22 +977,25 @@ not_found(){
 
         line="$( awk -F ':' '{print $2}' <<< "${string}")"
         line="${line//\'/}"
-        echo -e "${red}Incorrect:${restore} ${line}"
-        line="${line//'*'/\*}"
         line="${line#[[:space:]]}"
+        
+        # PROTECTION: Ignore overlay targetings and wildcards
+        if [[ "${line}" == *"::"* || "${line}" == "*/*"* ]]; then continue; fi
+        
+        echo -e "${red}Incorrect:${restore} ${line}"
         INVALID_FOUNDED+="${line}"$'\n'
 
         if [[ -n "${line}" && -f "${file}" ]];then
             tmp_file="$(mktemp)"
             cp "${file}" "${tmp_file}"
-            [[ -n "${line}" ]] && sed -e "s|$(echo $line)$||" -e 's|[ \t]| |' -e '/^[ \t]$/d' -e '/^$/d' -i ${tmp_file}
+            [[ -n "${line}" ]] && sed -e "\|^$(echo $line)|d" -i "${tmp_file}"
             diff_ask "${file}" "${tmp_file}"
         elif [[ -n "${line}" && -d "${file}" ]];then
             for package in $(grep -RH "${line//'*'/\*}" "${file}"/ | awk -F \: '{print $1}');do
                     tmp_package="$(mktemp)"
                     cp "${package}" "${tmp_package}"
                     echo -e "${red}Incorrect:${restore} ${line}"
-                    [[ -n "${line}" ]] && sed -e "s|${line//'*'/\*}||" -e 's/[ \t]*$//' -e '/^$/d' -i ${tmp_package}
+                    [[ -n "${line}" ]] && sed -e "\|^${line//'*'/\*}|d" -i "${tmp_package}"
                     diff_ask "${package}" "${tmp_package}"
                     eend $? 2>/dev/null
             done
@@ -1009,7 +1018,9 @@ not_found(){
         set -f
         tlines="$(grep "^${file} " <<< "${invalid}" | sed "s|${file} ||g")"
         while read line;do
-            sed -e "s|^$(printf "%s" "${line}").*$||;s|^${line//\*/\\*}.*$||" -e 's|[ \t]| |;/^[ \t]$/d;/^$/d' -i "${tmp_file}"
+            # PROTECTION: Ignore overlay targetings and wildcards
+            if [[ "${line}" == *"::"* || "${line}" == "*/*"* ]]; then continue; fi
+            sed -e "\|^${line//\*/\\*}|d" -i "${tmp_file}"
         done <<< "${tlines}"
         diff_ask "${file}" "${tmp_file}"
         set +f
@@ -1246,7 +1257,9 @@ mask_trash(){
             cp "${target}" "${tmp_file}"
             incorrect="$(grep ${target} <<< "${TRASH}" | sed -e "s|${target} ||g")"
             for trash_atom in ${incorrect};do
-                sed -e "s|^${trash_atom//\*/\\*}.*||" -e '/^$/d' -e 's/[ \t]*$//' -i "${tmp_file}"
+                # PROTECTION: Ignore overlay targetings and wildcards
+                if [[ "${trash_atom}" == *"::"* || "${trash_atom}" == "*/*"* ]]; then continue; fi
+                sed -e "\|^${trash_atom//\*/\\*}|d" -i "${tmp_file}"
             done
             diff_ask "${target}" "${tmp_file}"
         fi
@@ -1263,10 +1276,8 @@ remove_trash(){
         while read line;do
             [[ -z "${line}" ]] && continue
             
-            # WICHTIG: Wenn das Paket ein Repo explizit definiert (::spikyatlinux etc), NICHT als stupid markieren!
-            if [[ "${line}" == *"::"* ]]; then
-                continue
-            fi
+            # PROTECTION: Ignore overlay targetings and wildcards (::spikyatlinux etc)
+            if [[ "${line}" == *"::"* || "${line}" == "*/*"* ]]; then continue; fi
             
             entry="$(qatom "$(tr -d '<>=~#' <<< "${line}")" | awk '{print $1,$2}' | tr ' ' '/')"
             if [[ "${atom}" == "${entry}" ]];then
@@ -1276,7 +1287,7 @@ remove_trash(){
                     else
                         echo -e "stupid entry (${red}!${restore}installed): ${green}${line}${restore}"
                     fi
-                    sed -e "s|${line//\*/\\*}||" -e '/^$/d' -i "${tmp_file}"
+                    sed -e "\|^${line//\*/\\*}|d" -i "${tmp_file}"
                     break
                 fi
             fi
@@ -1306,6 +1317,7 @@ sort_uniq_mask_use(){
 
             declare -A SEEN
             while IFS= read -r line || [[ -n "${line}" ]]; do
+                # Skip empty lines and comments
                 if [[ -z "${line}" || "${line}" =~ ^[[:space:]]*# ]]; then
                     echo "${line}" >> "${tmp_sort}"
                     continue
@@ -1361,7 +1373,7 @@ etc_profile_use_mask() {
     tmp_file="$(mktemp)"
     cp "${orig_file}" "${tmp_file}"
     while IFS= read -r use || [[ -n "${use}" ]]; do
-        # Überspringe Leerzeilen und Kommentare
+        # Skip empty lines and comments
         [[ -z "${use}" || "${use}" =~ ^[[:space:]]*# ]] && continue
 
         if grep -q -E "^${use}$" <<< "$(use_mask)";then
@@ -1372,8 +1384,8 @@ etc_profile_use_mask() {
             fi
         else
             if grep -q "^-" <<< "${use}";then
-                # SICHERHEITS-FIX: Hier wurde vorher mit sed gelöscht.
-                # Das ist jetzt entfernt, um z.B. -php_targets_php8-3 zu schützen!
+                # SECURITY-FIX: sed deletion was used here previously.
+                # This has been removed to protect flags like -php_targets_php8-3!
                 : 
             fi
         fi
@@ -1692,7 +1704,8 @@ ${contrast}Common${restore}
     -y,  --yes:                  Auto answer (Yes).
     -p,  --pretend:              Check only.
     -ip, --ignore-profile-dir:   Ignore /etc/portage/profile/ directory.
-    -h,  -h, -?, h, --help:      This help.
+    -h,  -?, --help:             This help.
+    -v,  --version:              Show version information.
 ${contrast}\${USE}${restore}
     -us, --use-sort:             Sort useflags. Remove doubles and preserve only last defined state (on/off).
     -ui, --use-invalid:          Delete invalid or twice global-defined useflags.
@@ -1725,6 +1738,13 @@ ${contrast}Overlays${restore}:
     -fr, --fix-repos:            Remove unused overlays and dep-cache.
 
 OPTIONS must be separated by SPACE."
+
+if [[ -n "${PORTCONF_COMMIT}" ]]; then
+    echo -e "Version: ${contrast}${PORTCONF_VERSION}${restore} (Commit: ${PORTCONF_COMMIT})"
+else
+    echo -e "Version: ${contrast}${PORTCONF_VERSION}${restore}"
+fi
+
 }
 ############################################################################
 ################ run_it ####################################################
@@ -1867,5 +1887,12 @@ for OPT in ${opts_list}; do
     --fix-repos | -fr )
         overlays;;
     --help | -h | -? | h ) help_pc;;
+    --version | -v )
+        if [[ -n "${PORTCONF_COMMIT}" ]]; then
+            echo -e "portconf version ${contrast}${PORTCONF_VERSION}${restore} (Commit: ${PORTCONF_COMMIT})"
+        else
+            echo -e "portconf version ${contrast}${PORTCONF_VERSION}${restore}"
+        fi
+        exit 0;;
     esac
 done
